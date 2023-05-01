@@ -1,0 +1,86 @@
+version: '3.10'
+
+services:
+  web:
+    build: ..
+    volumes:
+      - ./src:/code
+    ports:
+      - "8000"
+    env_file:
+      - ../.env
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - practicum
+
+  db:
+    image: postgres:13
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+      - ./plain_movies_db.sql:/docker-entrypoint-initdb.d/plain_movies_db.sql
+    ports:
+      - "5432"
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: user
+      POSTGRES_DB: movies_dbs
+    networks:
+      - practicum
+
+  elasticsearch:
+    image: elasticsearch:7.17.8
+    environment:
+      - "discovery.type=single-node"
+      - "xpack.security.enabled=false"
+      - "ES_JAVA_OPTS=-Xmx512m -Xms512m"
+    env_file:
+      - ../.env
+    ports:
+      - "9200"
+    restart: on-failure
+    networks:
+      - practicum
+
+  etl:
+    build: etl4
+    image: etl4
+    depends_on:
+      - db
+      - web
+      - elasticsearch
+    volumes:
+      - etl_volume:/opt/etl
+    networks:
+      - practicum
+
+  redis:
+    image: redis:6.2.4
+    ports:
+      - "6379"
+    networks:
+      - practicum
+
+  nginx:
+    image: nginx:1.23.1
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/configs:/etc/nginx/conf.d:ro
+    ports:
+      - "80:80"
+    depends_on:
+      web:
+        condition: service_started
+    restart: always
+    networks:
+      - practicum
+      
+volumes:
+  postgres_data:
+  etl_volume:
+
+networks:
+  practicum:
+    external: true

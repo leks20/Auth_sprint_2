@@ -1,0 +1,70 @@
+version: '3.10'
+
+services:
+  web:
+    build: ../../..
+    image: fastapi-image
+    container_name: fastapi
+    volumes:
+      - ../../src:/code
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../../../.env
+    depends_on:
+       redis:
+         condition: service_started
+    command: ["uvicorn", "main:app", "--host",  "0.0.0.0", "--port", "8000"]
+    networks:
+      - movies_tests
+
+  elasticsearch:
+    image: elasticsearch:7.17.8
+    environment:
+    - "discovery.type=single-node"
+    - "xpack.security.enabled=false"
+    - "ES_JAVA_OPTS=-Xmx512m -Xms512m"
+    env_file:
+      - ../../../.env
+    ports:
+      - "9200:9200"
+    networks:
+      - movies_tests
+    
+  redis:
+    image: redis:6.2.4
+    ports:
+      - "6379:6379"
+    networks:
+      - movies_tests
+
+  tests:
+    image: fastapi-image
+    container_name: tests
+    volumes:
+      - ../../src:/code
+      - ../../tests:/code/tests
+    environment:
+      - "redis_host=redis"
+      - "redis_port=6379"
+      - "elastic_schema=http"
+      - "elastic_host=elasticsearch"
+      - "elastic_port=9200"
+      - "service_schema=http"
+      - "service_url=web"
+      - "service_port=8000"
+      - "PYTHONPATH=${PYTHONPATH}:/tests/functional"
+
+    depends_on:
+      - web
+    entrypoint: >
+      sh -c "pip install --upgrade pip
+      && pip install -r tests/functional/requirements.txt
+      && python3 tests/functional/utils/wait_for_es.py
+      && python3 tests/functional/utils/wait_for_redis.py
+      && pytest tests/functional/src"
+    networks:
+      - movies_tests
+      
+networks:
+  movies_tests:
